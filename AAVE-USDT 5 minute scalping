@@ -1,0 +1,101 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// cyrus.the.ggrreeaatt
+//@version=5
+strategy("superTrendFiltered", overlay=true ,pyramiding=0,
+  calc_on_every_tick=true,
+  default_qty_type=strategy.percent_of_equity,
+  default_qty_value=5,
+  commission_type=strategy.commission.percent,
+  commission_value=0.04)
+
+// super trend 
+atrPeriod = input(15, "ATR Length")
+factor = input.float(3.3, "Factor", step = 0.01)
+
+[_, direction] = ta.supertrend(factor, atrPeriod)
+
+
+///////////// sma
+
+slowSma=ta.sma(ohlc4,input.int(200,title = "slow ema"))
+slowSma:=request.security(syminfo.tickerid,'60',slowSma)
+
+
+//////////// zlsma
+length_z = input(title='Length', defval=30)
+offset_z = input(title='Offset', defval=6)
+src_z = input(close, title='Source')
+lsma = ta.linreg(src_z, length_z, offset_z)
+lsma2 = ta.linreg(lsma, length_z, offset_z)
+eq = lsma - lsma2
+zlsma = lsma + eq
+zlsma:=request.security(syminfo.tickerid,'60',zlsma)
+
+////////// bollinger bands 
+length = input.int(90, minval=1)
+maType = input.string("VWMA", "Basis MA Type", options = ["SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"])
+srcBB = input(close, title="Source")
+mult = input.float(2, minval=0.001, maxval=50, title="StdDev",step=0.1)
+
+ma(source, length, _type) =>
+    switch _type
+        "SMA" => ta.sma(source, length)
+        "EMA" => ta.ema(source, length)
+        "SMMA (RMA)" => ta.rma(source, length)
+        "WMA" => ta.wma(source, length)
+        "VWMA" => ta.vwma(source, length)
+
+basis = ma(srcBB, length, maType)
+dev = mult * ta.stdev(srcBB, length)
+upper = basis + dev
+lower = basis - dev
+
+offset = input.int(0, "Offset", minval = -500, maxval = 500)
+plot(basis, "Basis", color=#FF6D00, offset = offset)
+p1 = plot(upper, "Upper", color=#2962FF, offset = offset)
+p2 = plot(lower, "Lower", color=#2962FF, offset = offset)
+fill(p1, p2, title = "Background", color=color.rgb(33, 150, 243, 95))
+
+baseLine=basis +0.9*(upper-basis)
+
+
+/////////////////////// rsi 
+
+rsi = ta.rsi(ohlc4, input.int(20,title = "rsi"))
+rsiHigher = request.security(syminfo.tickerid,'240',ta.rsi(ohlc4, input.int(12,title = "rsi higher")))
+
+//////////////////////// entry conditions
+
+
+longCondition =ta.change(direction) < 0 and rsiHigher>50 and close>slowSma and close>zlsma and close<upper//and state=='long' //and k > d and d < 35 //and fastEma>slowEma //and ta.change(direction) < 0
+if (longCondition)
+    strategy.entry("My Long Entry Id", strategy.long)
+
+shortCondition = ta.change(direction) > 0 and rsiHigher<50 and close<slowSma and close<zlsma and close>lower//and state=='short' //and k < d and d > 65 //and fastEma<slowEma //and ta.change(direction) > 0 
+if (shortCondition)
+    strategy.entry("My Short Entry Id", strategy.short)
+
+
+////////////////////// exit conditions
+
+rsi_co=ta.crossover(rsi,30)
+rsi_cu=ta.crossunder(rsi,70)
+
+
+if strategy.position_size>0 and rsi_cu 
+    strategy.close_all()
+
+if strategy.position_size<0 and rsi_co 
+    strategy.close_all()
+
+stopLoss=input.float(2,title = "stop loss",step=0.5)
+
+stopPrice_long=strategy.position_avg_price*(1-stopLoss*0.01)
+stopPrice_short=strategy.position_avg_price*(1+stopLoss*0.01)
+
+
+if strategy.position_size>0 and low < stopPrice_long
+    strategy.close_all()
+    
+if strategy.position_size<0 and high > stopPrice_short
+    strategy.close_all()
