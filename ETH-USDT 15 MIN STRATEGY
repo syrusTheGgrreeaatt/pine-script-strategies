@@ -1,0 +1,76 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+
+// © cyrus.the.ggrreeaatt
+
+//@version=5
+strategy("pivotReversalStrategyFiltered", overlay=true ,pyramiding=0,
+  calc_on_every_tick=true,
+  default_qty_type=strategy.percent_of_equity,
+  default_qty_value=5,
+  commission_type=strategy.commission.percent,
+  commission_value=0.04)
+
+
+leftBars = input(5)
+rightBars = input(2)
+swh = ta.pivothigh(leftBars, rightBars)
+swl = ta.pivotlow(leftBars, rightBars)
+swh_cond = not na(swh)
+hprice = 0.0
+hprice := swh_cond ? swh : hprice[1]
+le = false
+le := swh_cond ? true : (le[1] and high > hprice ? false : le[1])
+// if (le)
+// 	strategy.entry("PivRevLE", strategy.long, comment="PivRevLE", stop=hprice + syminfo.mintick)
+swl_cond = not na(swl)
+lprice = 0.0
+lprice := swl_cond ? swl : lprice[1]
+se = false
+se := swl_cond ? true : (se[1] and low < lprice ? false : se[1])
+// if (se)
+// 	strategy.entry("PivRevSE", strategy.short, comment="PivRevSE", stop=lprice - syminfo.mintick)
+
+//////////// zlsma
+length_z = input(title='Length', defval=7)
+offset_z = input(title='Offset', defval=0)
+src_z = input(close, title='Source')
+lsma = ta.linreg(src_z, length_z, offset_z)
+lsma2 = ta.linreg(lsma, length_z, offset_z)
+eq = lsma - lsma2
+zlsma = lsma + eq
+zlsma:=request.security(syminfo.tickerid,'240',zlsma)
+
+
+////////////// stoch
+
+periodK = input.int(25, title="%K Length", minval=1)
+smoothK = input.int(3, title="%K Smoothing", minval=1)
+periodD = input.int(5, title="%D Smoothing", minval=1)
+k = ta.sma(ta.stoch(close, high, low, periodK), smoothK)
+d = ta.sma(k, periodD)
+
+////////////////////
+
+longSingnal=le and k>d and d<30 and close >zlsma
+
+shortSignal=se and k<d and d>70 and  close < zlsma
+
+
+if (longSingnal )
+	strategy.entry("PivRevLE", strategy.long, comment="PivRevLE", stop=hprice + syminfo.mintick)
+
+if (shortSignal)
+	strategy.entry("PivRevSE", strategy.short, comment="PivRevSE", stop=lprice - syminfo.mintick)
+
+
+stopLoss=input.float(2,title = "stop loss",step=0.5)
+
+stopPrice_long=strategy.position_avg_price*(1-stopLoss*0.01)
+stopPrice_short=strategy.position_avg_price*(1+stopLoss*0.01)
+
+
+if strategy.position_size>0 and low < stopPrice_long
+    strategy.close_all()
+    
+if strategy.position_size<0 and high > stopPrice_short
+    strategy.close_all()
